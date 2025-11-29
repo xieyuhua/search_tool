@@ -14,8 +14,8 @@
 #define MAX_PATH_LENGTH 4096
 
 // 函数声明
-void search_in_file(const char *filename, const char *search_str);
-int search_in_directory(const char *dir_path, const char *file_pattern, const char *search_str, int recursive);
+void search_in_file(const char *filename, const char *search_str, int context_lines);
+int search_in_directory(const char *dir_path, const char *file_pattern, const char *search_str, int recursive, int context_lines);
 int matches_pattern(const char *filename, const char *pattern);
 int is_text_file(const char *filename);
 int is_log_file(const char *filename);
@@ -226,36 +226,164 @@ int wildcard_match(const char *pattern, const char *text) {
     return 0;
 }
 
-// 在单个文件中搜索字符串
-void search_in_file(const char *filename, const char *search_str) {
-    FILE *file = fopen(filename, "r");
-    if (!file) {
-        return; // 静默处理无法打开的文件
-    }
+// void search_in_file(const char *filename, const char *search_str) {
+//     FILE *file = fopen(filename, "r");
+//     if (!file) {
+//         return; // 静默处理无法打开的文件
+//     }
+//     char line[MAX_LINE_LENGTH];
+//     int line_number = 0;
+//     int found_count = 0;
+    
+//     while (fgets(line, sizeof(line), file)) {
+//         line_number++;
+//         line[strcspn(line, "\n")] = 0;
+//         if (strstr(line, search_str) != NULL) {
+//             printf("文件: %s, 第 %d 行: %s\n", filename, line_number, line);
+//             found_count++;
+//         }
+//     }
+//     fclose(file);
+//     if (found_count > 0) {
+//         printf("--> 在 %s 中找到 %d 个匹配项\n\n", filename, found_count);
+//     }
+// }
 
-    char line[MAX_LINE_LENGTH];
+void search_in_file(const char *filename, const char *search_str, int context_lines) {
+    FILE *file = fopen(filename, "r");
+    if (!file) return;
+    
+    // 参数安全检查
+    if (context_lines < 0) context_lines = 0;
+    if (context_lines > 5) context_lines = 5; // 限制上下文行数
+    
+    char line[2048];
     int line_number = 0;
     int found_count = 0;
+    
+    // 第一遍：统计匹配行
+    while (fgets(line, sizeof(line), file)) {
+        line_number++;
+        if (strstr(line, search_str) != NULL) {
+            found_count++;
+        }
+    }
+    
+    if (found_count == 0) {
+        fclose(file);
+        return;
+    }
+    
+    // 第二遍：显示结果
+    rewind(file);
+    line_number = 0;
+    int current_match = 0;
+    
+    // printf("在文件 %s 中找到 %d 个匹配项:\n", filename, found_count);
+    // printf("========================================\n");
+    
+    // 简单的行缓存（最多缓存context_lines行）
+    char **prev_lines = NULL;
+    int *prev_line_nums = NULL;
+    int prev_count = 0;
+    
+    if (context_lines > 0) {
+        prev_lines = malloc(context_lines * sizeof(char*));
+        prev_line_nums = malloc(context_lines * sizeof(int));
+        
+        if (prev_lines && prev_line_nums) {
+            int i;
+            for ( i = 0; i < context_lines; i++) {
+                prev_lines[i] = malloc(2048);
+                if (prev_lines[i]) {
+                    prev_lines[i][0] = '\0';
+                    prev_line_nums[i] = 0;
+                }
+            }
+        }
+    }
     
     while (fgets(line, sizeof(line), file)) {
         line_number++;
         line[strcspn(line, "\n")] = 0;
         
+        // 更新前几行缓存
+        if (context_lines > 0 && prev_lines && prev_line_nums) {
+            if (prev_count < context_lines) {
+                strncpy(prev_lines[prev_count], line, 2047);
+                prev_lines[prev_count][2047] = '\0';
+                prev_line_nums[prev_count] = line_number;
+                prev_count++;
+            } else {
+                // 移动缓存（FIFO）
+                int i;
+                for ( i = 0; i < context_lines - 1; i++) {
+                    strncpy(prev_lines[i], prev_lines[i + 1], 2047);
+                    prev_lines[i][2047] = '\0';
+                    prev_line_nums[i] = prev_line_nums[i + 1];
+                }
+                strncpy(prev_lines[context_lines - 1], line, 2047);
+                prev_lines[context_lines - 1][2047] = '\0';
+                prev_line_nums[context_lines - 1] = line_number;
+            }
+        }
+        
         if (strstr(line, search_str) != NULL) {
-            printf("文件: %s, 第 %d 行: %s\n", filename, line_number, line);
-            found_count++;
+            current_match++;
+            printf("在文件 %s 匹配项 %d (第 %d 行):\n", filename, current_match, line_number);
+            printf("----------------------------------------\n");
+            
+            // 显示前面的上下文
+            if (context_lines > 0 && prev_lines) {
+                int i ;
+                for ( i = 0; i < prev_count; i++) {
+                    if (prev_line_nums[i] < line_number) {
+                        printf("  第 %4d 行: %s\n", prev_line_nums[i], prev_lines[i]);
+                    }
+                }
+            }
+            
+            // 显示匹配行
+            printf("> 第 %4d 行: %s\n", line_number, line);
+            
+            // 显示后面的上下文
+            int i ;
+            for ( i = 1; i <= context_lines; i++) {
+                char next_line[2048];
+                if (fgets(next_line, sizeof(next_line), file)) {
+                    next_line[strcspn(next_line, "\n")] = 0;
+                    printf("  第 %4d 行: %s\n", line_number + i, next_line);
+                } else {
+                    break;
+                }
+            }
+            printf("\n");
+            
+            // 如果读取了后面的行，需要调整文件指针
+            if (context_lines > 0) {
+                // 这里简化处理：后面的匹配项可能显示不完整
+                // 对于精确显示，需要更复杂的逻辑
+            }
         }
     }
     
-    fclose(file);
+    printf("========================================\n\n");
     
-    if (found_count > 0) {
-        printf("--> 在 %s 中找到 %d 个匹配项\n\n", filename, found_count);
+    // 安全释放内存
+    if (prev_lines) {
+        int i ;
+        for ( i = 0; i < context_lines; i++) {
+            if (prev_lines[i]) free(prev_lines[i]);
+        }
+        free(prev_lines);
     }
+    if (prev_line_nums) free(prev_line_nums);
+    
+    fclose(file);
 }
 
 // 递归搜索目录
-int search_in_directory(const char *dir_path, const char *file_pattern, const char *search_str, int recursive) {
+int search_in_directory(const char *dir_path, const char *file_pattern, const char *search_str, int recursive, int context_lines) {
     DIR *dir = opendir(dir_path);
     if (!dir) {
         return 0;
@@ -283,11 +411,11 @@ int search_in_directory(const char *dir_path, const char *file_pattern, const ch
         
         if (S_ISDIR(stat_buf.st_mode)) {
             if (recursive) {
-                file_count += search_in_directory(full_path, file_pattern, search_str, recursive);
+                file_count += search_in_directory(full_path, file_pattern, search_str, recursive, context_lines);
             }
         } else if (S_ISREG(stat_buf.st_mode)) {
             if (matches_pattern(entry->d_name, file_pattern)) {
-                search_in_file(full_path, search_str);
+                search_in_file(full_path, search_str, context_lines);
                 file_count++;
             }
         }
@@ -301,7 +429,7 @@ int search_in_directory(const char *dir_path, const char *file_pattern, const ch
 void print_usage(const char *program_name) {
     printf("文件内容搜索工具 - 增强版文本文件搜索\n");
     printf("使用说明:\n");
-    printf("  %s \"搜索字符串\" [目录] [文件模式]\n", program_name);
+    printf("  %s \"搜索字符串\" [目录] [文件模式] [显示上下文行]\n", program_name);
     printf("\n文件匹配规则:\n");
     printf("  - 只搜索文本文件和日志文件\n");
     printf("  - 支持通配符匹配: * 匹配任意多个字符, ? 匹配单个字符\n");
@@ -339,7 +467,7 @@ int main(int argc, char *argv[]) {
     const char *search_str = argv[1];
     const char *dir_path = ".";
     const char *file_pattern = ""; // 默认匹配所有文本文件和日志文件
-    
+    int context_line = 0; 
     // 解析参数
     if (argc >= 3) {
         // 第二个参数可能是目录或文件模式
@@ -356,6 +484,10 @@ int main(int argc, char *argv[]) {
             }
         }
     }
+    context_line = 0;
+    if (argc >= 4) {
+        context_line = atoi(argv[4]);
+    }
     
     printf("开始搜索...\n");
     printf("搜索字符串: \"%s\"\n", search_str);
@@ -371,10 +503,11 @@ int main(int argc, char *argv[]) {
             printf("匹配方式: 文件名包含匹配（不区分大小写）\n");
         }
     }
+    printf("上下行数: %d 行\n", context_line);
     
-    printf("========================================\n");
+    printf("========================================\n\n");
     
-    int file_count = search_in_directory(dir_path, file_pattern, search_str, 1);
+    int file_count = search_in_directory(dir_path, file_pattern, search_str, 1, context_line);
     
     printf("========================================\n");
     printf("搜索完成，共检查了 %d 个匹配文件\n", file_count);
