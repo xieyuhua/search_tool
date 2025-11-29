@@ -11,6 +11,9 @@ gcc -o search_tool search_tool.c
 使用示例
 在当前目录的所有txt文件中搜索"hello"：
 
+cp search_tool /usr/bin/
+
+
 bash
 ./search_tool "hello" . log
 在当前目录的搜索所有名文名有log字符文件中搜索"hello"：
