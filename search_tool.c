@@ -249,6 +249,7 @@ int wildcard_match(const char *pattern, const char *text) {
 //     }
 // }
 
+
 void search_in_file(const char *filename, const char *search_str, int context_lines) {
     FILE *file = fopen(filename, "r");
     if (!file) return;
@@ -264,7 +265,8 @@ void search_in_file(const char *filename, const char *search_str, int context_li
     // 第一遍：统计匹配行
     while (fgets(line, sizeof(line), file)) {
         line_number++;
-        if (strstr(line, search_str) != NULL) {
+        if (check_match_optimized(line, search_str) == 1) {
+        // if (strstr(line, search_str) != NULL) {
             found_count++;
         }
     }
@@ -328,7 +330,8 @@ void search_in_file(const char *filename, const char *search_str, int context_li
             }
         }
         
-        if (strstr(line, search_str) != NULL) {
+        // if (strstr(line, search_str) != NULL) {
+        if (check_match_optimized(line, search_str) == 1) {
             current_match++;
             printf("在文件 %s 匹配项 %d (第 %d 行):\n", filename, current_match, line_number);
             printf("----------------------------------------\n");
@@ -381,6 +384,131 @@ void search_in_file(const char *filename, const char *search_str, int context_li
     
     fclose(file);
 }
+
+int check_match_optimized(const char* line, const char* search_str) {
+    char temp[256];
+    char* token;
+    int i;
+    
+    // 复制字符串到临时缓冲区
+    strncpy(temp, search_str, sizeof(temp) - 1);
+    temp[sizeof(temp) - 1] = '\0';
+    
+    // 检查是否包含 |（或关系）
+    if (strchr(search_str, '|') != NULL) {
+        token = strtok(temp, "|");
+        while (token != NULL) {
+            if (strstr(line, token) != NULL) {
+                return 1; // 匹配成功
+            }
+            token = strtok(NULL, "|");
+        }
+        return 0; // 没有匹配
+    }
+    // 检查是否包含 &（与关系）
+    else if (strchr(search_str, '&') != NULL) {
+        token = strtok(temp, "&");
+        while (token != NULL) {
+            if (strstr(line, token) == NULL) {
+                return 0; // 有一个不匹配就失败
+            }
+            token = strtok(NULL, "&");
+        }
+        return 1; // 全部匹配
+    }
+    // 单个字符串
+    else {
+        return strstr(line, search_str) != NULL;
+    }
+}
+
+// // 高性能版本 - 避免字符串拷贝
+// int check_match_optimized(const char* line, const char* search_str) {
+//     const char *start = search_str;
+//     const char *current = search_str;
+//     int is_or_mode = 0;
+//     int is_and_mode = 0;
+    
+//     // 快速检测模式
+//     while (*current) {
+//         if (*current == '|') {
+//             is_or_mode = 1;
+//             break;
+//         } else if (*current == '&') {
+//             is_and_mode = 1;
+//             break;
+//         }
+//         current++;
+//     }
+    
+//     // 重置指针
+//     current = search_str;
+    
+//     if (is_or_mode) {
+//         // 或关系 - 任一匹配即返回
+//         const char *token_start = search_str;
+//         const char *token_end = search_str;
+        
+//         while (*current) {
+//             if (*current == '|' || *(current + 1) == '\0') {
+//                 if (*current == '|') {
+//                     token_end = current;
+//                 } else {
+//                     token_end = current + 1; // 包含最后一个字符
+//                 }
+                
+//                 // 提取token长度
+//                 size_t token_len = token_end - token_start;
+//                 if (token_len > 0) {
+//                     // 使用strncmp进行精确比较，避免strstr的全局搜索
+//                     if (strstr(line, token_start) != NULL) {
+//                         return 1;
+//                     }
+//                 }
+                
+//                 token_start = current + 1;
+//             }
+//             current++;
+//         }
+//         return 0;
+        
+//     } else if (is_and_mode) {
+//         // 与关系 - 所有必须匹配
+//         const char *token_start = search_str;
+//         const char *token_end = search_str;
+        
+//         while (*current) {
+//             if (*current == '&' || *(current + 1) == '\0') {
+//                 if (*current == '&') {
+//                     token_end = current;
+//                 } else {
+//                     token_end = current + 1;
+//                 }
+                
+//                 size_t token_len = token_end - token_start;
+//                 if (token_len > 0) {
+//                     if (strstr(line, token_start) == NULL) {
+//                         return 0; // 任一不匹配立即返回
+//                     }
+//                 }
+                
+//                 token_start = current + 1;
+//             }
+//             current++;
+//         }
+//         return 1;
+        
+//     } else {
+//         // 单个字符串
+//         if(strstr(line, search_str) != NULL){
+//              return 1;
+//         }else{
+//              return 0;
+//         }
+//         // 单个字符串
+//         // return strstr(line, search_str) != NULL;
+//     }
+// }
 
 // 递归搜索目录
 int search_in_directory(const char *dir_path, const char *file_pattern, const char *search_str, int recursive, int context_lines) {
