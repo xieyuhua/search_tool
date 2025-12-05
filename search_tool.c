@@ -258,7 +258,7 @@ void search_in_file(const char *filename, const char *search_str, int context_li
     if (context_lines < 0) context_lines = 0;
     if (context_lines > 5) context_lines = 5; // 限制上下文行数
     
-    char line[2048];
+    char line[20480];
     int line_number = 0;
     int found_count = 0;
     
@@ -296,7 +296,7 @@ void search_in_file(const char *filename, const char *search_str, int context_li
         if (prev_lines && prev_line_nums) {
             int i;
             for ( i = 0; i < context_lines; i++) {
-                prev_lines[i] = malloc(2048);
+                prev_lines[i] = malloc(20480);
                 if (prev_lines[i]) {
                     prev_lines[i][0] = '\0';
                     prev_line_nums[i] = 0;
@@ -312,20 +312,20 @@ void search_in_file(const char *filename, const char *search_str, int context_li
         // 更新前几行缓存
         if (context_lines > 0 && prev_lines && prev_line_nums) {
             if (prev_count < context_lines) {
-                strncpy(prev_lines[prev_count], line, 2047);
-                prev_lines[prev_count][2047] = '\0';
+                strncpy(prev_lines[prev_count], line, 20479);
+                prev_lines[prev_count][20479] = '\0';
                 prev_line_nums[prev_count] = line_number;
                 prev_count++;
             } else {
                 // 移动缓存（FIFO）
                 int i;
                 for ( i = 0; i < context_lines - 1; i++) {
-                    strncpy(prev_lines[i], prev_lines[i + 1], 2047);
-                    prev_lines[i][2047] = '\0';
+                    strncpy(prev_lines[i], prev_lines[i + 1], 20479);
+                    prev_lines[i][20479] = '\0';
                     prev_line_nums[i] = prev_line_nums[i + 1];
                 }
-                strncpy(prev_lines[context_lines - 1], line, 2047);
-                prev_lines[context_lines - 1][2047] = '\0';
+                strncpy(prev_lines[context_lines - 1], line, 20479);
+                prev_lines[context_lines - 1][20479] = '\0';
                 prev_line_nums[context_lines - 1] = line_number;
             }
         }
@@ -352,7 +352,7 @@ void search_in_file(const char *filename, const char *search_str, int context_li
             // 显示后面的上下文
             int i ;
             for ( i = 1; i <= context_lines; i++) {
-                char next_line[2048];
+                char next_line[20480];
                 if (fgets(next_line, sizeof(next_line), file)) {
                     next_line[strcspn(next_line, "\n")] = 0;
                     printf("  第 %4d 行: %s\n", line_number + i, next_line);
@@ -386,7 +386,7 @@ void search_in_file(const char *filename, const char *search_str, int context_li
 }
 
 int check_match_optimized(const char* line, const char* search_str) {
-    char temp[256];
+    char temp[512];
     char* token;
     int i;
     
